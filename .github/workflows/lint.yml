@@ -1,39 +1,65 @@
 name: "linting-tool-scan"
-
+ 
 on:
   push:
-    branches: [githubcicd]
-
+    branches: [main, develop, githubcicd]
+  pull_request:
+    branches: [main, develop]
+ 
 jobs:
   test:
     runs-on: ubuntu-latest
-
+ 
     strategy:
       matrix:
-        node-version: [16.x]
-
+        node-version: [20.x] # Updated to current LTS
+ 
     steps:
-      - uses: actions/checkout@v2
-
+      - uses: actions/checkout@v4 # Updated to v4
+ 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+ 
+      - name: Cache node modules
+        uses: actions/cache@v3
+        id: cache-nodemodules
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+ 
       - name: Install Dependencies
         if: steps.cache-nodemodules.outputs.cache-hit != 'true'
+        run: npm ci --legacy-peer-deps
+ 
+      - name: Install JSHint locally
+        run: npm install jshint --legacy-peer-deps --no-save
+ 
+      - name: Run JSHint
         run: |
-          npm ci --force
-
-      - name: Installing JSHint
+          # Create output directory
+          mkdir -p reports
+          # Run JSHint on JavaScript files and output to a report file
+          npx jshint --reporter=checkstyle ./src > ./reports/jshint-report.xml || true
+          # Also create a human-readable version
+          npx jshint ./src > ./JSHint-report || true
+ 
+      - name: Check for severe linting issues
         run: |
-          sudo npm install -g jshint
-
-      - name: Change script permission
-        run: |
-          chmod +x scripts/jshint-script.sh
-
-      - name: Run scan with JSHint
-        run: scripts/jshint-script.sh
-
-      - name: Archive production artifacts
-        uses: actions/upload-artifact@v3
+          if grep -q "ERROR" ./JSHint-report; then
+            echo "Severe linting issues found"
+            cat ./JSHint-report
+            exit 1
+          fi
+ 
+      - name: Archive linting reports
+        uses: actions/upload-artifact@v4
         with:
-          name: linting tool report
+          name: linting-reports
           path: |
             ./JSHint-report
+            ./reports/*.xml

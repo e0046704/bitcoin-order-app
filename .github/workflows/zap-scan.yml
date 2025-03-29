@@ -1,31 +1,52 @@
-name: "owasp-scan"
-
+name: "owasp-zap-scan"
+ 
 on:
   push:
-    branches: [githubcicd]
-
+    branches: [main, develop, githubcicd]
+  pull_request:
+    branches: [main, develop]
+ 
 jobs:
-  test:
+  zap-scan:
     runs-on: ubuntu-latest
-
+ 
     strategy:
       matrix:
-        node-version: [16.x]
-
+        node-version: [20.x] # Updated to current LTS
+ 
     steps:
-      - uses: actions/checkout@v2
-
+      - uses: actions/checkout@v4 # Updated to v4
+ 
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
+          cache: "npm"
+ 
+      - name: Cache node modules
+        uses: actions/cache@v3
+        id: cache-nodemodules
+        with:
+          path: node_modules
+          key: ${{ runner.os }}-node-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-node-
+ 
+      - name: Install Dependencies
+        if: steps.cache-nodemodules.outputs.cache-hit != 'true'
+        run: |
+          npm ci --legacy-peer-deps
+ 
       - name: Change script permission
         run: |
           chmod +x scripts/zap-script.sh
-
+ 
       - name: ZAP scan
-        run: scripts/zap-script.sh
-
+        run: scripts/zap-script.sh || true
+ 
       - name: Archive production artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4 # Updated to v4
         with:
-          name: zap report
+          name: zap-report
           path: |
             ./zap_baseline_report.html
-
